@@ -216,6 +216,12 @@
     <div class="row"><label>雇用保険料率（本人負担）<small>2026年度 一般の事業 0.5%</small></label><input type="number" step="0.01" data-s="employmentRate"><span class="unit">%</span></div>
     <div class="row"><label>標準報酬月額の基準額<small>空欄＝毎月の支給合計から判定</small></label><input type="number" data-s="stdBase"><span class="unit">円</span></div>
     <!-- =============== Claudeが編集しました。 =============== -->
+    <!-- 勤務時間の端数処理（Claudeが追加） -->
+    <div class="row"><label>勤務時間の端数処理<small>時間を0.01時間単位に丸めてから時給をかける</small></label>
+      <select data-s="hourRounding" style="width:130px; padding:8px; font-size:14px;">
+        <option value="ceil">切り上げ</option><option value="round">四捨五入</option>
+        <option value="floor">切り捨て</option><option value="none">しない（分単位）</option>
+      </select><span class="unit"></span></div>
     <div class="row"><label>時給<small>基本給＝時給×(勤務−残業)、残業手当＝時給×1.25×残業</small></label><input type="number" inputmode="numeric" data-s="hourly"><span class="unit">円</span></div>
     <div class="row"><label>交通費単価（1日の出社あたり）<small>非課税通勤費＝単価×出社回数</small></label><input type="number" inputmode="numeric" data-s="commutePerDay"><span class="unit">円</span></div>
     <div class="row"><label>自分が扶養している人数<small>普通は0人</small></label><input type="number" data-s="dependents"><span class="unit">人</span></div>
@@ -274,7 +280,8 @@ const DEFAULT_SETTINGS = {
   careRate: 1.62,       // 介護保険（40〜64歳）
   pensionRate: 18.3,    // 厚生年金（固定）
   employmentRate: 0.5,  // 雇用保険 労働者負担（令和8年度 一般の事業）
-  stdBase: '', hourly: '', commutePerDay: '', dependents: 0   // commutePerDay = 1日出社あたりの交通費（Claudeが追加）
+  hourRounding: 'ceil',   // 勤務時間の端数処理（0.01時間単位で切り上げ）。明細の 52:47→105,580円 に合わせた（Claudeが追加）
+  stdBase: '', hourly: '', commutePerDay: '', dependents: 0  // commutePerDay = 1日出社あたりの交通費（Claudeが追加）
 };
 
 let state = { year: String(new Date().getFullYear()), period: String(new Date().getMonth() + 1), screen: 'input' };
@@ -310,6 +317,15 @@ function parseHM(str) {
   return null;
 }
 // 152.5 → "152:30"
+// =============== Claudeが編集しました。 ===============
+// 時間(小数)を 0.01時間単位に丸める。mode: 'ceil'=切り上げ / 'round'=四捨五入 / 'floor'=切り捨て / 'none'=分単位そのまま
+// 小数の誤差を避けるため「分(整数)」に直してから計算する（1分 = 5/3 ×0.01時間）
+function roundHours(hours, mode = 'ceil') {
+  const min = Math.round(num(hours) * 60);
+  if (mode === 'none') return min / 60;
+  const f = mode === 'round' ? Math.round : mode === 'floor' ? Math.floor : Math.ceil;
+  return f(min * 5 / 3) / 100;
+}
 function formatHM(hours) {
   if (!has(hours)) return '';
   const min = Math.round(Number(hours) * 60);
@@ -393,9 +409,13 @@ function calcPeriod(y, p, rec = {}) {
     // =============== Claudeが編集しました。 ===============
     // 時給・交通費単価が設定されていれば、基本給・残業手当・通勤費を自動計算（入力があればそちら優先）
     const wage = num(s.hourly);
-    const normalHours = Math.max(0, num(rec.workHours) - num(rec.overtimeHours));  // 勤務時間は残業込みの前提
+    // =============== Claudeが編集しました。 ===============
+    // 時間は会社の端数処理に合わせて 0.01時間単位に丸めてから時給をかける
+    // 例：52:47 = 52.7833…時間 → 切り上げで 52.79時間 → ×2000円 = 105,580円（明細と一致）
+    const workH = roundHours(rec.workHours, s.hourRounding), otH = roundHours(rec.overtimeHours, s.hourRounding);
+    const normalHours = Math.max(0, workH - otH);                                   // 勤務時間は残業込みの前提
     r.auto.baseSalary = wage > 0 ? Math.round(wage * normalHours) : 0;             // 時給 × (勤務時間 − 残業時間)
-    r.auto.overtimePay = wage > 0 ? Math.round(wage * 1.25 * num(rec.overtimeHours)) : 0; // 時給 × 1.25 × 残業時間
+    r.auto.overtimePay = wage > 0 ? Math.round(wage * 1.25 * otH) : 0;             // 時給 × 1.25 × 残業時間
     r.auto.commute = Math.round(num(s.commutePerDay) * num(rec.officeDays));       // 交通費単価 × 出社回数
     for (const k of ['baseSalary', 'overtimePay', 'commute']) r[k] = has(rec[k]) ? num(rec[k]) : r.auto[k];
     r.taxable = r.baseSalary + num(rec.paidLeave) + r.overtimePay + num(rec.otherTaxable);
@@ -637,7 +657,10 @@ function renderSettings() {
 function onSettingInput(e) {
   const k = e.target.dataset.s; if (!k) return;
   const s = yearData().settings;
-  s[k] = e.target.type === 'checkbox' ? e.target.checked : (e.target.value === '' ? '' : Number(e.target.value));
+  // select（端数処理など文字列の設定）はそのまま保存、それ以外は数値に（Claudeが編集）
+  s[k] = e.target.type === 'checkbox' ? e.target.checked
+       : e.target.tagName === 'SELECT' ? e.target.value
+       : (e.target.value === '' ? '' : Number(e.target.value));
   saveAll(DB);
 }
 function applyPreset(kind) {
