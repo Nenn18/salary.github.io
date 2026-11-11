@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- 背景：家計簿・単語アプリと同じパステル調（給与はミントグリーン） -->
+  <rect width="1024" height="1024" fill="#cdeedd"/>
+  <g transform="translate(-62 -14)">
+  <!-- 給与明細の紙（影＋本体） -->
+  <rect x="262" y="222" width="400" height="540" rx="44" fill="#9fd6bb" opacity="0.55" transform="translate(14 18)"/>
+  <rect x="262" y="222" width="400" height="540" rx="44" fill="#ffffff"/>
+  <!-- 見出しバー -->
+  <rect x="318" y="290" width="170" height="38" rx="19" fill="#3fbf86"/>
+  <!-- 明細の行（項目名と金額） -->
+  <g fill="#d6e4f0">
+    <rect x="318" y="382" width="150" height="24" rx="12"/><rect x="510" y="382" width="96" height="24" rx="12"/>
+    <rect x="318" y="446" width="150" height="24" rx="12"/><rect x="510" y="446" width="96" height="24" rx="12"/>
+    <rect x="318" y="510" width="150" height="24" rx="12"/><rect x="510" y="510" width="96" height="24" rx="12"/>
+  </g>
+  <!-- 合計の区切り線 -->
+  <rect x="318" y="580" width="288" height="8" rx="4" fill="#3fbf86" opacity="0.35"/>
+  <!-- 円コイン -->
+  <circle cx="676" cy="676" r="158" fill="#e9b532"/>
+  <circle cx="676" cy="664" r="158" fill="#f6c445"/>
+  <circle cx="676" cy="664" r="122" fill="none" stroke="#ffdc7d" stroke-width="10"/>
+  <g stroke="#ffffff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <polyline points="622,590 676,656 730,590"/>
+    <line x1="676" y1="656" x2="676" y2="744"/>
+    <line x1="630" y1="668" x2="722" y2="668"/>
+    <line x1="630" y1="708" x2="722" y2="708"/>
+  </g>
+  <!-- キラッと線（ほかのアイコンと同じ雰囲気） -->
+  <g stroke="#4a90d9" stroke-width="16" stroke-linecap="round">
+    <line x1="828" y1="470" x2="858" y2="430"/>
+    <line x1="868" y1="540" x2="912" y2="526"/>
+    <line x1="770" y1="440" x2="774" y2="396"/>
+  </g>
+  </g>
+</svg>

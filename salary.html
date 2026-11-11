@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>年間給与計算</title>
+  <link rel="manifest" href="manifest.json">
+  <!-- =============== Claudeが編集しました。 =============== -->
+  <!-- アプリアイコン（ホーム画面用・ブラウザのタブ用） -->
+  <link rel="apple-touch-icon" href="app-icon.png">
+  <link rel="icon" type="image/png" href="app-icon.png">
+  <meta name="theme-color" content="#3fbf86">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    /* ===== 家計簿アプリ(index.html)と同じiOS風デザイン ===== */
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 15px; padding-bottom: 110px; background-color: #f2f2f7; color: #1c1c1e; }
+    .screen { display: none; }
+    .screen.active { display: block; }
+    .card { background: #fff; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 14px; }
+    .page-header { display: flex; align-items: flex-end; justify-content: space-between; padding: 12px 4px 14px; }
+    .page-eyebrow { font-size: 13px; font-weight: 600; color: #8e8e93; margin-bottom: 2px; }
+    .page-title { margin: 0; font-size: 30px; font-weight: 800; line-height: 1.15; }
+    .back-link { font-size: 14px; color: #007aff; text-decoration: none; }
+    select, input { font-family: inherit; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; padding: 10px; box-sizing: border-box; background: #fff; }
+
+    /* 月選択チップ（横スクロール） */
+    .chips { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 10px; -webkit-overflow-scrolling: touch; }
+    .chip { flex-shrink: 0; border: none; background: #e3e3e8; border-radius: 16px; padding: 8px 13px; font-size: 14px; position: relative; cursor: pointer; }
+    .chip.active { background: #007aff; color: #fff; font-weight: bold; }
+    .chip.has::after { content: ""; position: absolute; top: 4px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: #34c759; }
+
+    /* 入力フォーム：ラベル左・入力右の明細風 */
+    .sec-title { font-size: 13px; font-weight: 700; color: #8e8e93; margin: 4px 0 6px; display: flex; justify-content: space-between; }
+    .row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f0f0f3; }
+    .row:last-child { border-bottom: none; }
+    .row label { flex: 1; font-size: 14px; }
+    .row label small { display: block; font-size: 11px; color: #8e8e93; }
+    .row input { width: 130px; text-align: right; padding: 8px; }
+    .row .unit { width: 26px; font-size: 12px; color: #8e8e93; }
+    .row input.invalid { border-color: #ff3b30; background: #fff5f5; }  /* hh:mmの形式エラー */
+    .row.calc { background: #f6f9ff; border-radius: 8px; padding: 8px; margin: 2px 0; }
+    .row.calc .val { width: 130px; text-align: right; font-weight: bold; font-size: 15px; }
+    .row.big .val { font-size: 20px; color: #007aff; }
+    .auto-hint { font-size: 11px; color: #007aff; }
+
+    .primary-btn, .secondary-btn { font-family: inherit; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+    .primary-btn { background: #007aff; color: #fff; }
+    .secondary-btn { background: #eee; color: #555; }
+    .btn-row { display: flex; gap: 8px; }
+    .save-state { text-align: center; font-size: 12px; color: #34c759; height: 16px; }
+
+    /* 年間集計テーブル */
+    .table-wrap { overflow-x: auto; }
+    table { border-collapse: collapse; font-size: 12px; white-space: nowrap; width: 100%; }
+    th, td { padding: 7px 6px; border-bottom: 1px solid #eee; text-align: right; }
+    th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: #fff; }
+    thead th { color: #8e8e93; font-weight: 600; }
+    tfoot td { font-weight: bold; border-top: 2px solid #ccc; }
+
+    .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .kpi { background: #f6f9ff; border-radius: 10px; padding: 10px; }
+    .kpi .k { font-size: 12px; color: #8e8e93; }
+    .kpi .v { font-size: 19px; font-weight: 800; margin-top: 2px; }
+
+
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f3; font-size: 14px; }
+    .toggle-row input[type=checkbox] { width: 22px; height: 22px; }
+    .explain h4 { margin: 14px 0 4px; font-size: 15px; }
+    .explain p { margin: 0; font-size: 13px; line-height: 1.7; color: #3a3a3c; }
+    .note { font-size: 12px; color: #8e8e93; line-height: 1.6; }
+
+    .nav { position: fixed; bottom: 0; left: 0; width: 100%; display: flex; background: #f8f8f8; border-top: 1px solid #ddd; padding-bottom: env(safe-area-inset-bottom); z-index: 1000; }
+    .nav button { flex: 1; padding: 22px 0 30px; border: none; background: transparent; font-size: 13px; color: #999; }
+    .nav button.active { color: #007aff; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<!-- ============ 画面1：明細入力 ============ -->
+<div id="screen-input" class="screen active">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">給与明細を月ごとに入力</div>
+      <h1 class="page-title">給与明細</h1>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+    <select id="year" onchange="onYearChange()" style="flex:1;"></select>
+    <span id="mode-badge" style="font-size:12px; color:#8e8e93;"></span>
+  </div>
+  <div class="chips" id="month-chips"></div>
+
+  <!-- 月給用フォーム -->
+  <div id="form-monthly">
+    <div class="card">
+      <div class="sec-title">勤怠</div>
+      <div class="row"><label>出社回数</label><input type="number" inputmode="numeric" data-k="officeDays"><span class="unit">日</span></div>
+      <div class="row"><label>リモート回数</label><input type="number" inputmode="numeric" data-k="remoteDays"><span class="unit">日</span></div>
+      <div class="row calc"><label>出勤日数</label><span class="val" id="c-days">0</span><span class="unit">日</span></div>
+      <!-- =============== Claudeが編集しました。 =============== -->
+      <!-- 勤務・残業時間は hh:mm で入力（例 152:30）。数字だけなら「時間」として扱う -->
+      <div class="row"><label>勤務時間<small>hh:mm（例 152:30）</small></label><input type="text" class="time-input" placeholder="0:00" data-k="workHours"><span class="unit"></span></div>
+      <div class="row"><label>残業時間<small>hh:mm（例 8:45）</small></label><input type="text" class="time-input" placeholder="0:00" data-k="overtimeHours"><span class="unit"></span></div>
+    </div>
+
+    <div class="card">
+      <div class="sec-title">支給</div>
+      <div class="row"><label>基本給<small>アルバイトなら 時給×勤務時間</small></label><input type="number" inputmode="numeric" data-k="baseSalary"><span class="unit">円</span></div>
+      <div class="row"><label>有給消化手当</label><input type="number" inputmode="numeric" data-k="paidLeave"><span class="unit">円</span></div>
+      <div class="row"><label>残業手当<small class="auto-hint" id="h-overtimePay"></small></label><input type="number" inputmode="numeric" data-k="overtimePay"><span class="unit">円</span></div>
+      <div class="row"><label>その他課税手当<small>役職・住宅・深夜手当など</small></label><input type="number" inputmode="numeric" data-k="otherTaxable"><span class="unit">円</span></div>
+      <div class="row calc"><label>課税支給合計</label><span class="val" id="c-taxable">0</span><span class="unit">円</span></div>
+      <div class="row"><label>非課税通勤費<small>月15万円まで非課税</small></label><input type="number" inputmode="numeric" data-k="commute"><span class="unit">円</span></div>
+      <div class="row"><label>その他非課税</label><input type="number" inputmode="numeric" data-k="otherNonTaxable"><span class="unit">円</span></div>
+      <div class="row calc"><label>非課税支給合計</label><span class="val" id="c-nontaxable">0</span><span class="unit">円</span></div>
+      <div class="row calc"><label>支給合計</label><span class="val" id="c-gross">0</span><span class="unit">円</span></div>
+    </div>
+  </div>
+
+  <!-- 賞与用フォーム -->
+  <div id="form-bonus" style="display:none;">
+    <div class="card">
+      <div class="sec-title">賞与（ボーナス）</div>
+      <div class="row"><label>賞与額<small>額面（税・社保が引かれる前）</small></label><input type="number" inputmode="numeric" data-k="bonus"><span class="unit">円</span></div>
+      <div class="row calc"><label>課税支給合計</label><span class="val" id="cb-taxable">0</span><span class="unit">円</span></div>
+    </div>
+  </div>
+
+  <!-- 控除（月給・賞与共通） -->
+  <div class="card">
+    <div class="sec-title"><span>控除</span><span style="font-weight:normal;">空欄 = 自動試算値を使用</span></div>
+    <div class="row"><label>健康保険料<small class="auto-hint" id="h-health"></small></label><input type="number" inputmode="numeric" data-k="health"><span class="unit">円</span></div>
+    <div class="row"><label>厚生年金保険料<small class="auto-hint" id="h-pension"></small></label><input type="number" inputmode="numeric" data-k="pension"><span class="unit">円</span></div>
+    <div class="row"><label>雇用保険料<small class="auto-hint" id="h-employment"></small></label><input type="number" inputmode="numeric" data-k="employment"><span class="unit">円</span></div>
+    <div class="row"><label>所得税<small class="auto-hint" id="h-incomeTax"></small></label><input type="number" inputmode="numeric" data-k="incomeTax"><span class="unit">円</span></div>
+    <div class="row only-monthly"><label>住民税<small>社会人2年目の6月から（前年の所得で決まる）</small></label><input type="number" inputmode="numeric" data-k="residentTax"><span class="unit">円</span></div>
+    <div class="row only-monthly"><label>福利厚生費</label><input type="number" inputmode="numeric" data-k="welfare"><span class="unit">円</span></div>
+    <div class="row"><label>その他控除<small>財形・持株会・組合費など</small></label><input type="number" inputmode="numeric" data-k="otherDeduction"><span class="unit">円</span></div>
+    <div class="row calc"><label>控除合計</label><span class="val" id="c-deduction">0</span><span class="unit">円</span></div>
+  </div>
+
+  <div class="card">
+    <div class="row calc big"><label>差引支給額（手取り）</label><span class="val" id="c-net">0</span><span class="unit">円</span></div>
+    <div class="row only-monthly"><label>扶養計算用<small class="auto-hint" id="h-fuyou"></small></label><input type="number" inputmode="numeric" data-k="fuyou"><span class="unit">円</span></div>
+    <div class="btn-row">
+      <button class="secondary-btn" onclick="copyPrevMonth()">前月をコピー</button>
+      <button class="secondary-btn" style="color:#ff3b30;" onclick="clearMonth()">この月をクリア</button>
+    </div>
+    <div class="save-state" id="save-state"></div>
+  </div>
+</div>
+
+<!-- ============ 画面2：年間集計 ============ -->
+<div id="screen-annual" class="screen">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow" id="annual-eyebrow"></div>
+      <h1 class="page-title">年間集計</h1>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="kpis">
+      <div class="kpi"><div class="k">年収（支給合計）</div><div class="v" id="k-gross">0</div></div>
+      <div class="kpi"><div class="k">手取り合計</div><div class="v" id="k-net" style="color:#007aff;">0</div></div>
+      <div class="kpi"><div class="k">控除合計</div><div class="v" id="k-ded" style="color:#ff3b30;">0</div></div>
+      <div class="kpi"><div class="k">手取り率</div><div class="v" id="k-rate">-</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="sec-title">月別 手取りと控除</div>
+    <canvas id="annualChart" height="220"></canvas>
+  </div>
+
+  <div class="card">
+    <div class="sec-title">月別一覧（横にスクロール）</div>
+    <div class="table-wrap"><table id="annual-table"></table></div>
+  </div>
+
+  <div class="card">
+    <div class="sec-title">年末調整の見込み（所得税）</div>
+    <div id="nencho"></div>
+  </div>
+</div>
+
+<!-- ============ 画面3：設定・解説 ============ -->
+<div id="screen-settings" class="screen">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow" id="settings-eyebrow"></div>
+      <h1 class="page-title">設定・解説</h1>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="sec-title">働き方（この年の設定）</div>
+    <div class="btn-row">
+      <button class="secondary-btn" onclick="applyPreset('part')">アルバイト（学生）</button>
+      <button class="secondary-btn" onclick="applyPreset('full')">正社員</button>
+    </div>
+    <div class="note" style="margin-top:6px;">ボタンを押すと下の加入状況がまとめて切り替わります。</div>
+    <div class="toggle-row">健康保険に加入<input type="checkbox" data-s="useHealth"></div>
+    <div class="toggle-row">厚生年金に加入<input type="checkbox" data-s="usePension"></div>
+    <div class="toggle-row">雇用保険に加入<input type="checkbox" data-s="useEmployment"></div>
+    <div class="toggle-row">40歳以上（介護保険あり）<input type="checkbox" data-s="useCare"></div>
+  </div>
+
+  <div class="card">
+    <div class="sec-title">計算パラメータ</div>
+    <div class="row"><label>健康保険料率（全体）<small>協会けんぽ・都道府県で違う。半分が本人負担</small></label><input type="number" step="0.01" data-s="healthRate"><span class="unit">%</span></div>
+    <div class="row"><label>子ども・子育て支援金率<small>2026年4月分から。半分が本人負担</small></label><input type="number" step="0.01" data-s="kidsRate"><span class="unit">%</span></div>
+    <div class="row"><label>介護保険料率（全体）</label><input type="number" step="0.01" data-s="careRate"><span class="unit">%</span></div>
+    <div class="row"><label>厚生年金保険料率（全体）</label><input type="number" step="0.01" data-s="pensionRate"><span class="unit">%</span></div>
+    <div class="row"><label>雇用保険料率（本人負担）<small>2026年度 一般の事業 0.5%</small></label><input type="number" step="0.01" data-s="employmentRate"><span class="unit">%</span></div>
+    <div class="row"><label>標準報酬月額の基準額<small>空欄＝毎月の支給合計から判定</small></label><input type="number" data-s="stdBase"><span class="unit">円</span></div>
+    <div class="row"><label>時間単価<small>残業手当の自動計算用（×1.25）</small></label><input type="number" data-s="hourly"><span class="unit">円</span></div>
+    <div class="row"><label>自分が扶養している人数<small>普通は0人</small></label><input type="number" data-s="dependents"><span class="unit">人</span></div>
+  </div>
+
+  <div class="card">
+    <div class="sec-title">データ</div>
+    <div class="btn-row">
+      <button class="secondary-btn" onclick="exportData()">バックアップ保存</button>
+      <button class="secondary-btn" onclick="document.getElementById('import-file').click()">読み込み</button>
+    </div>
+    <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importData(event)">
+  </div>
+
+  <!-- 社会人になったら引かれるものの解説 -->
+  <div class="card explain">
+    <div class="sec-title">給与明細の控除ってなに？</div>
+    <h4>🏥 健康保険料</h4>
+    <p>病院の窓口負担を3割にしてくれる保険。会社と本人で半分ずつ払う。金額は「標準報酬月額」（4〜6月の給料の平均を区切りのいい等級に丸めたもの）× 料率で決まり、通勤費も含めて判定される。2026年4月分からは「子ども・子育て支援金」も一緒に引かれる。</p>
+    <h4>👴 厚生年金保険料</h4>
+    <p>将来の年金。料率18.3%を会社と半分ずつ（本人9.15%）。標準報酬月額は8.8万〜65万円の範囲。たぶん控除の中でいちばん大きい。</p>
+    <h4>💼 雇用保険料</h4>
+    <p>失業したとき・育休のときにお金がもらえる保険。標準報酬ではなく<b>その月の支給合計（通勤費込み）</b>× 料率。昼間の学生バイトは原則対象外。</p>
+    <h4>🧾 所得税（源泉徴収）</h4>
+    <p>毎月「たぶんこのくらい」で天引きされる国の税金。社会保険料を引いた後の金額から計算する。12月の年末調整で1年分を正確に計算し直して、払いすぎなら戻ってくる。</p>
+    <h4>🏠 住民税</h4>
+    <p>都道府県・市区町村の税金。<b>前年の所得</b>で決まり、6月〜翌5月に12回に分けて天引き。だから社会人1年目はほぼ引かれず、2年目の6月から急に手取りが減る（「住民税ショック」）。学生時代のバイト収入が多いと1年目から少し引かれることも。</p>
+    <h4>📌 だいたいの目安</h4>
+    <p>正社員の新卒（月給25万円くらい）だと、1年目は手取りが額面の約80%、住民税が始まる2年目は約77%くらい。</p>
+    <h4>👪 扶養計算用</h4>
+    <p>親の扶養に入っていられるかの判定に使う金額。税金の扶養は「課税支給合計」の年間合計（1〜12月）、健康保険の扶養は「通勤費込みの見込み年収」で判定する（このアプリでは扶養計算用を課税支給合計で自動計算。明細の値が違えば上書きしてね）。</p>
+    <p class="note" style="margin-top:10px;">※ このアプリの自動計算は概算です。所得税は2025・2026年の税制改正（160万円・178万円の壁）を反映した簡易計算で、税額表とは数十〜数百円ずれることがあります。実際の金額は給与明細の値を入力してください。</p>
+  </div>
+</div>
+
+<div class="nav">
+  <button id="nav-input" class="active" onclick="switchScreen('input')">明細入力</button>
+  <button id="nav-annual" onclick="switchScreen('annual')">年間集計</button>
+  <button id="nav-settings" onclick="switchScreen('settings')">設定・解説</button>
+</div>
+
+<script>
+/* =========================================================
+   定数・データ保存まわり
+   ========================================================= */
+const STORAGE_KEY = 'salaryData';
+const PERIODS = ['1','2','3','4','5','6','7','8','9','10','11','12','b1','b2']; // b1=夏賞与, b2=冬賞与
+const PERIOD_LABEL = p => p === 'b1' ? '夏賞与' : p === 'b2' ? '冬賞与' : p + '月';
+const isBonus = p => p.startsWith('b');
+
+// 学生アルバイト向けの初期設定（社会保険なし）
+const DEFAULT_SETTINGS = {
+  useHealth: false, usePension: false, useEmployment: false, useCare: false, age19to22: true,
+  healthRate: 9.9,      // 協会けんぽ 令和8年度 全国平均（東京などは支部ごとに確認）
+  kidsRate: 0.23,       // 子ども・子育て支援金（2026年4月分〜）
+  careRate: 1.62,       // 介護保険（40〜64歳）
+  pensionRate: 18.3,    // 厚生年金（固定）
+  employmentRate: 0.5,  // 雇用保険 労働者負担（令和8年度 一般の事業）
+  stdBase: '', hourly: '', dependents: 0
+};
+
+let state = { year: String(new Date().getFullYear()), period: String(new Date().getMonth() + 1), screen: 'input' };
+let chart = null;
+
+// localStorage は使えない環境もあるので try/catch で包む
+function loadAll() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
+}
+function saveAll(data) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return true; } catch { return false; }
+}
+let DB = loadAll();
+function yearData(y = state.year) {
+  if (!DB[y]) DB[y] = { settings: { ...DEFAULT_SETTINGS }, months: {} };
+  DB[y].settings = { ...DEFAULT_SETTINGS, ...DB[y].settings };
+  return DB[y];
+}
+const num = v => (v === '' || v == null || isNaN(Number(v))) ? 0 : Number(v);
+const has = v => v !== '' && v != null && !isNaN(Number(v));
+const yen = v => Math.round(v).toLocaleString('ja-JP');
+
+// =============== Claudeが編集しました。 ===============
+// 時間は「時間(小数)」で保存し、画面では hh:mm で表示する
+const TIME_KEYS = ['workHours', 'overtimeHours'];
+// "152:30" → 152.5、"8" → 8、空欄 → ''、不正な形式 → null
+function parseHM(str) {
+  const s = String(str).trim().replace('：', ':');   // 全角コロンもOK
+  if (s === '') return '';
+  let m = s.match(/^(\d+):([0-5]?\d)$/);
+  if (m) return (Number(m[1]) * 60 + Number(m[2])) / 60;
+  if (/^\d+(\.\d+)?$/.test(s)) return Number(s);
+  return null;
+}
+// 152.5 → "152:30"
+function formatHM(hours) {
+  if (!has(hours)) return '';
+  const min = Math.round(Number(hours) * 60);
+  return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, '0')}`;
+}
+
+/* =========================================================
+   社会保険の計算
+   ========================================================= */
+// 健康保険の標準報酬月額（等級表：[この金額未満なら, 標準報酬月額]）
+const HEALTH_GRADES = [
+  [63000,58000],[73000,68000],[83000,78000],[93000,88000],[101000,98000],[107000,104000],[114000,110000],
+  [122000,118000],[130000,126000],[138000,134000],[146000,142000],[155000,150000],[165000,160000],
+  [175000,170000],[185000,180000],[195000,190000],[210000,200000],[230000,220000],[250000,240000],
+  [270000,260000],[290000,280000],[310000,300000],[330000,320000],[350000,340000],[370000,360000],
+  [395000,380000],[425000,410000],[455000,440000],[485000,470000],[515000,500000],[545000,530000],
+  [575000,560000],[605000,590000],[635000,620000],[665000,650000],[695000,680000],[730000,710000],
+  [770000,750000],[810000,790000],[855000,830000],[905000,880000],[955000,930000],[1005000,980000],
+  [1055000,1030000],[1115000,1090000],[1175000,1150000],[1235000,1210000],[1295000,1270000],
+  [1355000,1330000],[Infinity,1390000]
+];
+function healthStd(pay) { return HEALTH_GRADES.find(([lim]) => pay < lim)[1]; }
+// 厚生年金は 8.8万〜65万円 の範囲に収める
+function pensionStd(pay) { return Math.min(650000, Math.max(88000, healthStd(pay))); }
+
+// 給与から控除する保険料の端数：50銭以下切り捨て、50銭超切り上げ
+function roundHalfDown(x) { const f = Math.floor(x); return (x - f) > 0.5 ? f + 1 : f; }
+
+// 子ども・子育て支援金は 2026年4月分から
+function kidsApplies(y, p) { return Number(y) > 2026 || (Number(y) === 2026 && (isBonus(p) || Number(p) >= 4)); }
+
+/* =========================================================
+   所得税の計算（年税額ベースの簡易計算）
+   ========================================================= */
+// 給与所得控除（年）。minDed = 最低保障額
+function salaryDeduction(S, minDed) {
+  let d;
+  if (S <= 1625000) d = 0;
+  else if (S <= 3600000) d = S * 0.3 + 80000;
+  else if (S <= 6600000) d = S * 0.2 + 440000;
+  else if (S <= 8500000) d = S * 0.1 + 1100000;
+  else d = 1950000;
+  return Math.min(S, Math.max(minDed, d));
+}
+// 年ごとの税制（年末調整で使う本来のルール）
+function taxRules(year) {
+  const y = Number(year);
+  if (y <= 2024) return { minDed: 550000, basic: () => 480000 };
+  if (y === 2025) return { minDed: 650000, basic: inc => inc <= 1320000 ? 950000 : inc <= 3360000 ? 880000 : inc <= 4890000 ? 680000 : inc <= 6550000 ? 630000 : 580000 };
+  // 2026年〜：178万円の壁（基礎控除 62万+特例、給与所得控除 最低74万）
+  return { minDed: 740000, basic: inc => inc <= 4890000 ? 1040000 : inc <= 6550000 ? 670000 : 620000 };
+}
+// 毎月の源泉徴収は税額表の改正が1年遅れ & 特例加算なしなので、少し多めに引かれる
+function withholdingRules(year) {
+  const y = Number(year);
+  if (y <= 2025) return { minDed: 550000, basic: () => 480000 };
+  if (y === 2026) return { minDed: 650000, basic: () => 580000 };
+  return { minDed: 690000, basic: () => 620000 };
+}
+// 年間の所得税（復興特別所得税 2.1% 込み）
+function annualIncomeTax(salary, socialIns, dependents, rules) {
+  const income = salary - salaryDeduction(salary, rules.minDed);           // 給与所得
+  const taxable = Math.floor(Math.max(0, income - rules.basic(income) - socialIns - dependents * 380000) / 1000) * 1000;
+  const brackets = [[1950000,0.05,0],[3300000,0.10,97500],[6950000,0.20,427500],[9000000,0.23,636000],
+                    [18000000,0.33,1536000],[40000000,0.40,2796000],[Infinity,0.45,4796000]];
+  const [, r, d] = brackets.find(([lim]) => taxable <= lim);
+  return Math.floor(Math.max(0, taxable * r - d) * 1.021 / 100) * 100;
+}
+
+/* =========================================================
+   1か月分（または賞与）の計算：入力値＋自動試算値 → 結果
+   ========================================================= */
+function calcPeriod(y, p, rec = {}) {
+  const s = yearData(y).settings;
+  const r = { auto: {} };
+  // ---- 支給 ----
+  if (isBonus(p)) {
+    r.taxable = num(rec.bonus); r.nonTaxable = 0;
+  } else {
+    r.days = num(rec.officeDays) + num(rec.remoteDays);
+    r.auto.overtimePay = num(s.hourly) > 0 ? Math.round(num(s.hourly) * 1.25 * num(rec.overtimeHours)) : 0;
+    r.overtimePay = has(rec.overtimePay) ? num(rec.overtimePay) : r.auto.overtimePay;
+    r.taxable = num(rec.baseSalary) + num(rec.paidLeave) + r.overtimePay + num(rec.otherTaxable);
+    r.nonTaxable = num(rec.commute) + num(rec.otherNonTaxable);
+  }
+  r.gross = r.taxable + r.nonTaxable;
+
+  // ---- 社会保険（自動試算） ----
+  const hRate = (s.healthRate + (kidsApplies(y, p) ? s.kidsRate : 0) + (s.useCare ? s.careRate : 0)) / 2 / 100;
+  if (isBonus(p)) {
+    const stdBonus = Math.floor(r.gross / 1000) * 1000;                    // 標準賞与額（千円未満切り捨て）
+    r.auto.health = s.useHealth ? roundHalfDown(Math.min(stdBonus, 5730000) * hRate) : 0;
+    r.auto.pension = s.usePension ? roundHalfDown(Math.min(stdBonus, 1500000) * s.pensionRate / 2 / 100) : 0;
+  } else {
+    const base = has(s.stdBase) ? num(s.stdBase) : r.gross;               // 標準報酬月額の元
+    r.auto.health = s.useHealth && r.gross > 0 ? roundHalfDown(healthStd(base) * hRate) : 0;
+    r.auto.pension = s.usePension && r.gross > 0 ? roundHalfDown(pensionStd(base) * s.pensionRate / 2 / 100) : 0;
+  }
+  r.auto.employment = s.useEmployment ? roundHalfDown(r.gross * s.employmentRate / 100) : 0;
+  for (const k of ['health', 'pension', 'employment']) r[k] = has(rec[k]) ? num(rec[k]) : r.auto[k];
+  r.socialIns = r.health + r.pension + r.employment;
+
+  // ---- 所得税（自動試算） ----
+  const wr = withholdingRules(y), dep = num(s.dependents);
+  if (isBonus(p)) {
+    // 賞与は「月給の年額に上乗せした時に増える税額の割合」を税率として使う
+    const mAvg = monthlyAverages(y);
+    const base = annualIncomeTax(mAvg.taxable * 12, mAvg.si * 12, dep, wr);
+    const plus = annualIncomeTax(mAvg.taxable * 12 + r.taxable, mAvg.si * 12 + r.socialIns, dep, wr);
+    const after = r.taxable - r.socialIns;
+    r.auto.incomeTax = after > 0 ? Math.floor(after * Math.max(0, plus - base) / Math.max(1, after)) : 0;
+  } else {
+    r.auto.incomeTax = Math.round(annualIncomeTax(r.taxable * 12, r.socialIns * 12, dep, wr) / 12 / 10) * 10;
+  }
+  r.incomeTax = has(rec.incomeTax) ? num(rec.incomeTax) : r.auto.incomeTax;
+
+  // ---- 控除合計・手取り ----
+  r.residentTax = isBonus(p) ? 0 : num(rec.residentTax);
+  r.welfare = isBonus(p) ? 0 : num(rec.welfare);
+  r.deduction = r.socialIns + r.incomeTax + r.residentTax + r.welfare + num(rec.otherDeduction);
+  r.net = r.gross - r.deduction;
+  // 扶養計算用：既定は課税支給合計（明細と違えば上書き）
+  r.auto.fuyou = r.taxable;
+  r.fuyou = has(rec.fuyou) ? num(rec.fuyou) : r.auto.fuyou;
+  return r;
+}
+// 入力済みの月給の平均（賞与の税率計算用）
+function monthlyAverages(y) {
+  const months = yearData(y).months;
+  const list = PERIODS.filter(p => !isBonus(p) && months[p] && Object.keys(months[p]).length)
+                      .map(p => calcPeriod(y, p, months[p]));
+  if (!list.length) return { taxable: 0, si: 0 };
+  return { taxable: list.reduce((a, r) => a + r.taxable, 0) / list.length,
+           si: list.reduce((a, r) => a + r.socialIns, 0) / list.length };
+}
+
+/* =========================================================
+   画面1：明細入力
+   ========================================================= */
+function initYearSelect() {
+  const sel = document.getElementById('year');
+  const now = new Date().getFullYear();
+  const years = new Set([...Object.keys(DB), String(now - 1), String(now), String(now + 1), String(now + 2)]);
+  sel.innerHTML = [...years].sort().map(y => `<option value="${y}">${y}年</option>`).join('');
+  sel.value = state.year;
+}
+function onYearChange() { state.year = document.getElementById('year').value; renderAll(); }
+
+function renderChips() {
+  const months = yearData().months;
+  document.getElementById('month-chips').innerHTML = PERIODS.map(p => {
+    const filled = months[p] && Object.values(months[p]).some(has);
+    return `<button class="chip ${p === state.period ? 'active' : ''} ${filled ? 'has' : ''}" onclick="selectPeriod('${p}')">${PERIOD_LABEL(p)}</button>`;
+  }).join('');
+}
+function selectPeriod(p) { state.period = p; renderInput(); }
+
+// フォームに保存値を流し込む
+function renderInput() {
+  const yd = yearData();
+  const rec = yd.months[state.period] || {};
+  const bonus = isBonus(state.period);
+  document.getElementById('form-monthly').style.display = bonus ? 'none' : '';
+  document.getElementById('form-bonus').style.display = bonus ? '' : 'none';
+  document.querySelectorAll('.only-monthly').forEach(el => el.style.display = bonus ? 'none' : '');
+  document.querySelectorAll('#screen-input input[data-k]').forEach(inp => {
+    const k = inp.dataset.k;
+    inp.classList.remove('invalid');
+    inp.value = TIME_KEYS.includes(k) ? formatHM(rec[k]) : (rec[k] ?? '');   // 時間は hh:mm 表示（Claudeが編集）
+  });
+  const s = yd.settings;
+  document.getElementById('mode-badge').textContent = (s.useHealth || s.usePension) ? '正社員モード' : 'アルバイトモード';
+  renderChips();
+  updateCalc();
+}
+
+// 計算結果・自動試算ヒントを表示
+function updateCalc() {
+  const rec = yearData().months[state.period] || {};
+  const r = calcPeriod(state.year, state.period, rec);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = yen(v); };
+  set('c-days', r.days || 0); set('c-taxable', r.taxable); set('cb-taxable', r.taxable);
+  set('c-nontaxable', r.nonTaxable); set('c-gross', r.gross);
+  set('c-deduction', r.deduction); set('c-net', r.net);
+  // 自動試算値をラベル下とplaceholderに表示
+  for (const k of ['overtimePay', 'health', 'pension', 'employment', 'incomeTax', 'fuyou']) {
+    const hint = document.getElementById('h-' + k);
+    const inp = document.querySelector(`#screen-input input[data-k="${k}"]`);
+    if (r.auto[k] === undefined) continue;
+    if (hint) hint.textContent = has(rec[k]) ? `自動試算: ${yen(r.auto[k])}円（入力値を優先中）` : `自動試算: ${yen(r.auto[k])}円`;
+    if (inp) inp.placeholder = yen(r.auto[k]);
+  }
+}
+
+// 入力のたびに自動保存
+function onInput(e) {
+  const k = e.target.dataset.k; if (!k) return;
+  const yd = yearData();
+  const rec = yd.months[state.period] = yd.months[state.period] || {};
+  // =============== Claudeが編集しました。 ===============
+  // 時間項目は hh:mm を解析。入力途中（"152:" など）は保存せず枠を赤くするだけ
+  const v = TIME_KEYS.includes(k) ? parseHM(e.target.value) : (e.target.value === '' ? '' : Number(e.target.value));
+  e.target.classList.toggle('invalid', v === null);
+  if (v === null) return;
+  if (v === '') delete rec[k]; else rec[k] = v;
+  const ok = saveAll(DB);
+  const st = document.getElementById('save-state');
+  st.textContent = ok ? '✓ 自動保存しました' : '⚠ 保存できませんでした（プライベートモード？）';
+  clearTimeout(onInput.t); onInput.t = setTimeout(() => st.textContent = '', 1500);
+  renderChips(); updateCalc();
+}
+// 入力欄から離れたら "8.5" → "8:30" のように hh:mm に整える（Claudeが編集）
+document.addEventListener('change', e => {
+  const k = e.target.dataset && e.target.dataset.k;
+  if (!TIME_KEYS.includes(k)) return;
+  const v = parseHM(e.target.value);
+  if (v !== null && v !== '') e.target.value = formatHM(v);
+});
+
+// 前月の入力をコピー（勤怠以外の固定的な項目だけ）
+function copyPrevMonth() {
+  if (isBonus(state.period)) return alert('賞与ではコピーできません');
+  const m = Number(state.period);
+  const prevY = m === 1 ? String(Number(state.year) - 1) : state.year;
+  const prev = (DB[prevY] && DB[prevY].months[m === 1 ? '12' : String(m - 1)]) || null;
+  if (!prev) return alert('前月のデータがありません');
+  const keep = ['baseSalary', 'otherTaxable', 'commute', 'otherNonTaxable', 'health', 'pension', 'residentTax', 'welfare', 'otherDeduction'];
+  const yd = yearData();
+  yd.months[state.period] = { ...(yd.months[state.period] || {}) };
+  keep.forEach(k => { if (has(prev[k])) yd.months[state.period][k] = prev[k]; });
+  saveAll(DB); renderInput();
+}
+function clearMonth() {
+  if (!confirm(`${state.year}年 ${PERIOD_LABEL(state.period)} の入力を消しますか？`)) return;
+  delete yearData().months[state.period]; saveAll(DB); renderInput();
+}
+
+/* =========================================================
+   画面2：年間集計
+   ========================================================= */
+function renderAnnual() {
+  const y = state.year, yd = yearData();
+  document.getElementById('annual-eyebrow').textContent = `${y}年（1〜12月支給分）`;
+  const rows = PERIODS.map(p => ({ p, rec: yd.months[p], r: calcPeriod(y, p, yd.months[p] || {}) }))
+                      .filter(x => x.rec && Object.values(x.rec).some(has));
+  const sum = k => rows.reduce((a, x) => a + (x.r[k] || 0), 0);
+  const sumRec = k => rows.reduce((a, x) => a + num(x.rec[k]), 0);
+  const T = { gross: sum('gross'), net: sum('net'), ded: sum('deduction') };
+  document.getElementById('k-gross').textContent = yen(T.gross) + '円';
+  document.getElementById('k-net').textContent = yen(T.net) + '円';
+  document.getElementById('k-ded').textContent = yen(T.ded) + '円';
+  document.getElementById('k-rate').textContent = T.gross ? (T.net / T.gross * 100).toFixed(1) + '%' : '-';
+
+  // ---- 月別テーブル ----
+  const cols = [
+    ['出社', x => num(x.rec.officeDays)], ['リモート', x => num(x.rec.remoteDays)], ['出勤日数', x => x.r.days || 0],
+    ['勤務時間', x => ({ hm: num(x.rec.workHours) })], ['残業時間', x => ({ hm: num(x.rec.overtimeHours) })],  // hh:mm表示（Claudeが編集）
+    ['基本給', x => num(x.rec.baseSalary)], ['有給手当', x => num(x.rec.paidLeave)], ['残業手当', x => x.r.overtimePay || 0],
+    ['課税支給', x => x.r.taxable], ['通勤費', x => num(x.rec.commute)], ['非課税支給', x => x.r.nonTaxable],
+    ['支給合計', x => x.r.gross], ['健保', x => x.r.health], ['年金', x => x.r.pension], ['雇用', x => x.r.employment],
+    ['所得税', x => x.r.incomeTax], ['住民税', x => x.r.residentTax], ['福利厚生', x => x.r.welfare],
+    ['控除合計', x => x.r.deduction], ['手取り', x => x.r.net], ['扶養計算用', x => isBonus(x.p) ? x.r.taxable : x.r.fuyou]
+  ];
+  // =============== Claudeが編集しました。 ===============
+  // 時間の列は {hm: 時間} を返すので hh:mm で表示し、合計も時間同士で足す
+  const val = v => (typeof v === 'object') ? v.hm : v;
+  const fmt = (v, isTime) => isTime ? (formatHM(v) || '0:00') : yen(v);
+  const isTimeCol = c => rows.length && typeof c[1](rows[0]) === 'object';
+  document.getElementById('annual-table').innerHTML = rows.length ? `
+    <thead><tr><th>月</th>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(x => `<tr><td>${PERIOD_LABEL(x.p)}</td>${cols.map(c => `<td>${fmt(val(c[1](x)), isTimeCol(c))}</td>`).join('')}</tr>`).join('')}</tbody>
+    <tfoot><tr><td>合計</td>${cols.map(c => `<td>${fmt(rows.reduce((a, x) => a + val(c[1](x)), 0), isTimeCol(c))}</td>`).join('')}</tr></tfoot>`
+    : '<tr><td style="color:#aaa; padding:20px 0;">まだ入力がありません</td></tr>';
+
+  // ---- グラフ（手取り＋控除の積み上げ） ----
+  if (window.Chart) {
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById('annualChart'), {
+      type: 'bar',
+      data: { labels: rows.map(x => PERIOD_LABEL(x.p)),
+        datasets: [{ label: '手取り', data: rows.map(x => x.r.net), backgroundColor: '#007aff' },
+                   { label: '控除', data: rows.map(x => x.r.deduction), backgroundColor: '#ff9f0a' }] },
+      options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true, ticks: { callback: v => (v / 10000) + '万' } } },
+                 plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${yen(c.raw)}円` } } } }
+    });
+  }
+
+  // =============== Claudeが編集しました。 ===============
+  // 年収の壁の表示は不要とのことで削除（年末調整の見込みだけ残す）
+  const s = yd.settings;
+
+  // ---- 年末調整の見込み ----
+  const taxableSum = sum('taxable'), siSum = sum('socialIns'), withheld = sum('incomeTax');
+  const yearTax = annualIncomeTax(taxableSum, siSum, num(s.dependents), taxRules(y));
+  const diff = withheld - yearTax;
+  document.getElementById('nencho').innerHTML = `
+    <div class="row"><label>源泉徴収された所得税（合計）</label><span class="val">${yen(withheld)}円</span></div>
+    <div class="row"><label>1年分の本来の所得税（概算）</label><span class="val">${yen(yearTax)}円</span></div>
+    <div class="row calc big"><label>${diff >= 0 ? '年末調整で戻ってきそう' : '年末調整で追加で引かれそう'}</label><span class="val" style="color:${diff >= 0 ? '#34c759' : '#ff3b30'};">${yen(Math.abs(diff))}円</span></div>
+    <div class="note">12か月分そろうと正確になります。生命保険料控除などは含んでいません。</div>`;
+}
+
+/* =========================================================
+   画面3：設定
+   ========================================================= */
+function renderSettings() {
+  const s = yearData().settings;
+  document.getElementById('settings-eyebrow').textContent = `${state.year}年の設定`;
+  document.querySelectorAll('[data-s]').forEach(el => {
+    if (el.type === 'checkbox') el.checked = !!s[el.dataset.s]; else el.value = s[el.dataset.s] ?? '';
+  });
+}
+function onSettingInput(e) {
+  const k = e.target.dataset.s; if (!k) return;
+  const s = yearData().settings;
+  s[k] = e.target.type === 'checkbox' ? e.target.checked : (e.target.value === '' ? '' : Number(e.target.value));
+  saveAll(DB);
+}
+function applyPreset(kind) {
+  const s = yearData().settings;
+  const full = kind === 'full';
+  Object.assign(s, { useHealth: full, usePension: full, useEmployment: full });
+  saveAll(DB); renderSettings();
+}
+
+// バックアップ（JSONダウンロード）と読み込み
+function exportData() {
+  const blob = new Blob([JSON.stringify(DB, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `salary_backup_${new Date().toISOString().slice(0, 10)}.json`; a.click();
+}
+function importData(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try { DB = JSON.parse(ev.target.result); saveAll(DB); initYearSelect(); renderAll(); alert('読み込みました'); }
+    catch { alert('ファイルの形式が正しくありません'); }
+  };
+  reader.readAsText(f);
+}
+
+/* =========================================================
+   画面切り替え・初期化
+   ========================================================= */
+function switchScreen(id) {
+  state.screen = id;
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + id));
+  document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b.id === 'nav-' + id));
+  renderAll(); window.scrollTo(0, 0);
+}
+function renderAll() {
+  document.getElementById('year').value = state.year;   // 年セレクトと表示中の年をそろえる
+  if (state.screen === 'input') renderInput();
+  if (state.screen === 'annual') renderAnnual();
+  if (state.screen === 'settings') renderSettings();
+}
+document.getElementById('screen-input').addEventListener('input', onInput);
+document.getElementById('screen-settings').addEventListener('input', onSettingInput);
+initYearSelect();
+renderAll();
+</script>
+</body>
+</html>
