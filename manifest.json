@@ -1,7 +1,7 @@
 {
   "name": "年間給与計算アプリ",
   "short_name": "給与",
-  "start_url": "./salary.html",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#f2f2f7",
   "theme_color": "#3fbf86",
