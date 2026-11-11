@@ -106,12 +106,12 @@
 
     <div class="card">
       <div class="sec-title">支給</div>
-      <div class="row"><label>基本給<small>アルバイトなら 時給×勤務時間</small></label><input type="number" inputmode="numeric" data-k="baseSalary"><span class="unit">円</span></div>
+      <div class="row"><label>基本給<small class="auto-hint" id="h-baseSalary"></small></label><input type="number" inputmode="numeric" data-k="baseSalary"><span class="unit">円</span></div>
       <div class="row"><label>有給消化手当</label><input type="number" inputmode="numeric" data-k="paidLeave"><span class="unit">円</span></div>
       <div class="row"><label>残業手当<small class="auto-hint" id="h-overtimePay"></small></label><input type="number" inputmode="numeric" data-k="overtimePay"><span class="unit">円</span></div>
       <div class="row"><label>その他課税手当<small>役職・住宅・深夜手当など</small></label><input type="number" inputmode="numeric" data-k="otherTaxable"><span class="unit">円</span></div>
       <div class="row calc"><label>課税支給合計</label><span class="val" id="c-taxable">0</span><span class="unit">円</span></div>
-      <div class="row"><label>非課税通勤費<small>月15万円まで非課税</small></label><input type="number" inputmode="numeric" data-k="commute"><span class="unit">円</span></div>
+      <div class="row"><label>非課税通勤費<small class="auto-hint" id="h-commute"></small></label><input type="number" inputmode="numeric" data-k="commute"><span class="unit">円</span></div>
       <div class="row"><label>その他非課税</label><input type="number" inputmode="numeric" data-k="otherNonTaxable"><span class="unit">円</span></div>
       <div class="row calc"><label>非課税支給合計</label><span class="val" id="c-nontaxable">0</span><span class="unit">円</span></div>
       <div class="row calc"><label>支給合計</label><span class="val" id="c-gross">0</span><span class="unit">円</span></div>
@@ -215,7 +215,9 @@
     <div class="row"><label>厚生年金保険料率（全体）</label><input type="number" step="0.01" data-s="pensionRate"><span class="unit">%</span></div>
     <div class="row"><label>雇用保険料率（本人負担）<small>2026年度 一般の事業 0.5%</small></label><input type="number" step="0.01" data-s="employmentRate"><span class="unit">%</span></div>
     <div class="row"><label>標準報酬月額の基準額<small>空欄＝毎月の支給合計から判定</small></label><input type="number" data-s="stdBase"><span class="unit">円</span></div>
-    <div class="row"><label>時間単価<small>残業手当の自動計算用（×1.25）</small></label><input type="number" data-s="hourly"><span class="unit">円</span></div>
+    <!-- =============== Claudeが編集しました。 =============== -->
+    <div class="row"><label>時給<small>基本給＝時給×(勤務−残業)、残業手当＝時給×1.25×残業</small></label><input type="number" inputmode="numeric" data-s="hourly"><span class="unit">円</span></div>
+    <div class="row"><label>交通費単価（1日の出社あたり）<small>非課税通勤費＝単価×出社回数</small></label><input type="number" inputmode="numeric" data-s="commutePerDay"><span class="unit">円</span></div>
     <div class="row"><label>自分が扶養している人数<small>普通は0人</small></label><input type="number" data-s="dependents"><span class="unit">人</span></div>
   </div>
 
@@ -272,7 +274,7 @@ const DEFAULT_SETTINGS = {
   careRate: 1.62,       // 介護保険（40〜64歳）
   pensionRate: 18.3,    // 厚生年金（固定）
   employmentRate: 0.5,  // 雇用保険 労働者負担（令和8年度 一般の事業）
-  stdBase: '', hourly: '', dependents: 0
+  stdBase: '', hourly: '', commutePerDay: '', dependents: 0   // commutePerDay = 1日出社あたりの交通費（Claudeが追加）
 };
 
 let state = { year: String(new Date().getFullYear()), period: String(new Date().getMonth() + 1), screen: 'input' };
@@ -388,10 +390,16 @@ function calcPeriod(y, p, rec = {}) {
     r.taxable = num(rec.bonus); r.nonTaxable = 0;
   } else {
     r.days = num(rec.officeDays) + num(rec.remoteDays);
-    r.auto.overtimePay = num(s.hourly) > 0 ? Math.round(num(s.hourly) * 1.25 * num(rec.overtimeHours)) : 0;
-    r.overtimePay = has(rec.overtimePay) ? num(rec.overtimePay) : r.auto.overtimePay;
-    r.taxable = num(rec.baseSalary) + num(rec.paidLeave) + r.overtimePay + num(rec.otherTaxable);
-    r.nonTaxable = num(rec.commute) + num(rec.otherNonTaxable);
+    // =============== Claudeが編集しました。 ===============
+    // 時給・交通費単価が設定されていれば、基本給・残業手当・通勤費を自動計算（入力があればそちら優先）
+    const wage = num(s.hourly);
+    const normalHours = Math.max(0, num(rec.workHours) - num(rec.overtimeHours));  // 勤務時間は残業込みの前提
+    r.auto.baseSalary = wage > 0 ? Math.round(wage * normalHours) : 0;             // 時給 × (勤務時間 − 残業時間)
+    r.auto.overtimePay = wage > 0 ? Math.round(wage * 1.25 * num(rec.overtimeHours)) : 0; // 時給 × 1.25 × 残業時間
+    r.auto.commute = Math.round(num(s.commutePerDay) * num(rec.officeDays));       // 交通費単価 × 出社回数
+    for (const k of ['baseSalary', 'overtimePay', 'commute']) r[k] = has(rec[k]) ? num(rec[k]) : r.auto[k];
+    r.taxable = r.baseSalary + num(rec.paidLeave) + r.overtimePay + num(rec.otherTaxable);
+    r.nonTaxable = r.commute + num(rec.otherNonTaxable);
   }
   r.gross = r.taxable + r.nonTaxable;
 
@@ -493,7 +501,7 @@ function updateCalc() {
   set('c-nontaxable', r.nonTaxable); set('c-gross', r.gross);
   set('c-deduction', r.deduction); set('c-net', r.net);
   // 自動試算値をラベル下とplaceholderに表示
-  for (const k of ['overtimePay', 'health', 'pension', 'employment', 'incomeTax', 'fuyou']) {
+  for (const k of ['baseSalary', 'commute', 'overtimePay', 'health', 'pension', 'employment', 'incomeTax', 'fuyou']) {
     const hint = document.getElementById('h-' + k);
     const inp = document.querySelector(`#screen-input input[data-k="${k}"]`);
     if (r.auto[k] === undefined) continue;
@@ -565,8 +573,8 @@ function renderAnnual() {
   const cols = [
     ['出社', x => num(x.rec.officeDays)], ['リモート', x => num(x.rec.remoteDays)], ['出勤日数', x => x.r.days || 0],
     ['勤務時間', x => ({ hm: num(x.rec.workHours) })], ['残業時間', x => ({ hm: num(x.rec.overtimeHours) })],  // hh:mm表示（Claudeが編集）
-    ['基本給', x => num(x.rec.baseSalary)], ['有給手当', x => num(x.rec.paidLeave)], ['残業手当', x => x.r.overtimePay || 0],
-    ['課税支給', x => x.r.taxable], ['通勤費', x => num(x.rec.commute)], ['非課税支給', x => x.r.nonTaxable],
+    ['基本給', x => x.r.baseSalary || 0], ['有給手当', x => num(x.rec.paidLeave)], ['残業手当', x => x.r.overtimePay || 0],
+    ['課税支給', x => x.r.taxable], ['通勤費', x => x.r.commute || 0],   // 自動計算値も一覧に反映（Claudeが編集） ['非課税支給', x => x.r.nonTaxable],
     ['支給合計', x => x.r.gross], ['健保', x => x.r.health], ['年金', x => x.r.pension], ['雇用', x => x.r.employment],
     ['所得税', x => x.r.incomeTax], ['住民税', x => x.r.residentTax], ['福利厚生', x => x.r.welfare],
     ['控除合計', x => x.r.deduction], ['手取り', x => x.r.net], ['扶養計算用', x => isBonus(x.p) ? x.r.taxable : x.r.fuyou]
@@ -583,6 +591,10 @@ function renderAnnual() {
     : '<tr><td style="color:#aaa; padding:20px 0;">まだ入力がありません</td></tr>';
 
   // ---- グラフ（手取り＋控除の積み上げ） ----
+  // =============== Claudeが編集しました。 ===============
+  // 目盛りは1万円単位の整数だけにする（空のときに 0.04万 のような小数が出ないように）
+  const maxVal = Math.max(0, ...rows.map(x => Math.max(x.r.gross, x.r.net + x.r.deduction)));
+  const step = 10000 * Math.max(1, Math.ceil(maxVal / 60000));   // 目盛りが6本前後になる1万円の倍数
   if (window.Chart) {
     if (chart) chart.destroy();
     chart = new Chart(document.getElementById('annualChart'), {
@@ -590,7 +602,8 @@ function renderAnnual() {
       data: { labels: rows.map(x => PERIOD_LABEL(x.p)),
         datasets: [{ label: '手取り', data: rows.map(x => x.r.net), backgroundColor: '#007aff' },
                    { label: '控除', data: rows.map(x => x.r.deduction), backgroundColor: '#ff9f0a' }] },
-      options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true, ticks: { callback: v => (v / 10000) + '万' } } },
+      options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, suggestedMax: Math.max(maxVal, step * 5),
+                                                                          ticks: { stepSize: step, callback: v => Math.round(v / 10000) + '万' } } },
                  plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${yen(c.raw)}円` } } } }
     });
   }
@@ -606,8 +619,9 @@ function renderAnnual() {
   document.getElementById('nencho').innerHTML = `
     <div class="row"><label>源泉徴収された所得税（合計）</label><span class="val">${yen(withheld)}円</span></div>
     <div class="row"><label>1年分の本来の所得税（概算）</label><span class="val">${yen(yearTax)}円</span></div>
-    <div class="row calc big"><label>${diff >= 0 ? '年末調整で戻ってきそう' : '年末調整で追加で引かれそう'}</label><span class="val" style="color:${diff >= 0 ? '#34c759' : '#ff3b30'};">${yen(Math.abs(diff))}円</span></div>
-    <div class="note">12か月分そろうと正確になります。生命保険料控除などは含んでいません。</div>`;
+    <div class="row calc big"><label>年末調整額（推定値）</label><span class="val" style="color:${diff > 0 ? '#34c759' : diff < 0 ? '#ff3b30' : '#1c1c1e'};">${diff > 0 ? '+' : diff < 0 ? '−' : '±'}${yen(Math.abs(diff))}円</span></div>
+    <div class="note">＋は戻ってくる（還付）、−は追加で引かれる（徴収）。12か月分そろうと正確になります。生命保険料控除などは含んでいません。</div>`;
+  // ↑ 年末調整額の表示を「＋／−付きの1行」に変更（Claudeが編集）
 }
 
 /* =========================================================
