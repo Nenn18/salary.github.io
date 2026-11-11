@@ -614,7 +614,9 @@ function renderAnnual() {
   // =============== Claudeが編集しました。 ===============
   // 目盛りは1万円単位の整数だけにする（空のときに 0.04万 のような小数が出ないように）
   const maxVal = Math.max(0, ...rows.map(x => Math.max(x.r.gross, x.r.net + x.r.deduction)));
-  const step = 10000 * Math.max(1, Math.ceil(maxVal / 60000));   // 目盛りが6本前後になる1万円の倍数
+  // 目盛り幅は 1・2・5・10・20・50…万円 のキリのいい値から、目盛りが6本以下になる最小のものを選ぶ（Claudeが編集）
+  const NICE = [1, 2, 5, 10, 20, 50, 100, 200, 500];
+  const step = 10000 * (NICE.find(n => maxVal / (n * 10000) <= 6) || 1000);
   if (window.Chart) {
     if (chart) chart.destroy();
     chart = new Chart(document.getElementById('annualChart'), {
