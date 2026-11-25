@@ -110,7 +110,7 @@
       <div class="sec-title">支給</div>
       <div class="row"><label>基本給<small class="auto-hint" id="h-baseSalary"></small></label><input type="number" inputmode="numeric" data-k="baseSalary"><span class="unit">円</span></div>
       <div class="row"><label>有給消化手当</label><input type="number" inputmode="numeric" data-k="paidLeave"><span class="unit">円</span></div>
-      <div class="row"><label>残業手当<small class="auto-hint" id="h-overtimePay"></small></label><input type="number" inputmode="numeric" data-k="overtimePay"><span class="unit">円</span></div>
+      <div class="row"><label>普通残業手当<small class="auto-hint" id="h-overtimePay"></small></label><input type="number" inputmode="numeric" data-k="overtimePay"><span class="unit">円</span></div>
       <div class="row"><label>その他課税手当<small>役職・住宅・深夜手当など</small></label><input type="number" inputmode="numeric" data-k="otherTaxable"><span class="unit">円</span></div>
       <div class="row calc"><label>課税支給合計</label><span class="val" id="c-taxable">0</span><span class="unit">円</span></div>
       <div class="row"><label>非課税通勤費<small class="auto-hint" id="h-commute"></small></label><input type="number" inputmode="numeric" data-k="commute"><span class="unit">円</span></div>
@@ -224,7 +224,7 @@
         <option value="ceil">切り上げ</option><option value="round">四捨五入</option>
         <option value="floor">切り捨て</option><option value="none">しない（分単位）</option>
       </select><span class="unit"></span></div>
-    <div class="row"><label>時給<small>基本給＝時給×(勤務−残業)、残業手当＝時給×1.25×残業</small></label><input type="number" inputmode="numeric" data-s="hourly"><span class="unit">円</span></div>
+    <div class="row"><label>時給<small>基本給＝時給×勤務時間（残業込み）、普通残業手当＝時給×0.25×残業分÷60（四捨五入）</small></label><input type="number" inputmode="numeric" data-s="hourly"><span class="unit">円</span></div>
     <div class="row"><label>交通費単価（1日の出社あたり）<small>非課税通勤費＝単価×出社回数</small></label><input type="number" inputmode="numeric" data-s="commutePerDay"><span class="unit">円</span></div>
     <div class="row"><label>自分が扶養している人数<small>普通は0人</small></label><input type="number" data-s="dependents"><span class="unit">人</span></div>
   </div>
@@ -437,10 +437,16 @@ function calcPeriod(y, p, rec = {}) {
     // =============== Claudeが編集しました。 ===============
     // 時間は会社の端数処理に合わせて 0.01時間単位に丸めてから時給をかける
     // 例：52:47 = 52.7833…時間 → 切り上げで 52.79時間 → ×2000円 = 105,580円（明細と一致）
-    const workH = roundHours(rec.workHours, s.hourRounding), otH = roundHours(rec.overtimeHours, s.hourRounding);
-    const normalHours = Math.max(0, workH - otH);                                   // 勤務時間は残業込みの前提
-    r.auto.baseSalary = wage > 0 ? Math.round(wage * normalHours) : 0;             // 時給 × (勤務時間 − 残業時間)
-    r.auto.overtimePay = wage > 0 ? Math.round(wage * 1.25 * otH) : 0;             // 時給 × 1.25 × 残業時間
+    // =============== Claudeが編集しました。 ===============
+    // 明細の計算方法に合わせて変更：
+    //   基本給      ＝ 時給 × 勤務時間（残業込み・0.01時間単位に端数処理）… 残業時間の「1.0倍」部分もここに入る
+    //   普通残業手当 ＝ 時給 × 0.25 × 残業の分数 ÷ 60（分単位のまま計算し、1円未満を四捨五入）… 割増の「0.25倍」部分だけ
+    //   例：残業2分 → 2000 × 0.25 × 2 ÷ 60 = 16.67 → 17円（明細と一致）
+    const workH = roundHours(rec.workHours, s.hourRounding);
+    const otMin = Math.round(num(rec.overtimeHours) * 60);                          // 残業時間を分(整数)に
+    r.auto.baseSalary = wage > 0 ? Math.round(wage * workH) : 0;
+    // 小数の誤差を避けるため整数のまま計算：時給 × 分 ÷ 240（＝ ×0.25 ÷ 60）
+    r.auto.overtimePay = wage > 0 ? Math.round(wage * otMin / 240) : 0;
     r.auto.commute = Math.round(num(s.commutePerDay) * num(rec.officeDays));       // 交通費単価 × 出社回数
     for (const k of ['baseSalary', 'overtimePay', 'commute']) r[k] = has(rec[k]) ? num(rec[k]) : r.auto[k];
     r.taxable = r.baseSalary + num(rec.paidLeave) + r.overtimePay + num(rec.otherTaxable);
@@ -618,7 +624,7 @@ function renderAnnual() {
   const cols = [
     ['出社', x => num(x.rec.officeDays)], ['リモート', x => num(x.rec.remoteDays)], ['出勤日数', x => x.r.days || 0],
     ['勤務時間', x => ({ hm: num(x.rec.workHours) })], ['残業時間', x => ({ hm: num(x.rec.overtimeHours) })],  // hh:mm表示（Claudeが編集）
-    ['基本給', x => x.r.baseSalary || 0], ['有給手当', x => num(x.rec.paidLeave)], ['残業手当', x => x.r.overtimePay || 0],
+    ['基本給', x => x.r.baseSalary || 0], ['有給手当', x => num(x.rec.paidLeave)], ['普通残業手当', x => x.r.overtimePay || 0],
     ['課税支給', x => x.r.taxable], ['通勤費', x => x.r.commute || 0],   // 自動計算値も一覧に反映（Claudeが編集） ['非課税支給', x => x.r.nonTaxable],
     ['支給合計', x => x.r.gross], ['健保', x => x.r.health], ['年金', x => x.r.pension], ['雇用', x => x.r.employment],
     ['所得税', x => x.r.incomeTax], ['住民税', x => x.r.residentTax], ['福利厚生', x => x.r.welfare],
